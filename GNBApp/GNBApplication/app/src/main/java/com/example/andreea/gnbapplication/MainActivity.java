@@ -13,15 +13,16 @@ import android.widget.TextView;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements AdapterView.OnItemSelectedListener, AsyncResponse {
     private Spinner spinner;
     private TableLayout tableTransactions;
     private TextView totalTextView;
-    private List<Rate> rates;
     private List<Rate> directRatesToEuro;
-    private HashMap<String, List<String>> hashMap;
+    private List<Rate> roadmap;
+    private HashMap<String, List<Rate>> hashMap;
     private double sumTotal = 0;
 
     @Override
@@ -38,9 +39,8 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
         //select listener on spinner
         spinner.setOnItemSelectedListener(this);
 
-        rates = new ArrayList<Rate>();
         directRatesToEuro = new ArrayList<Rate>();
-        hashMap = new HashMap<String, List<String>>();
+        hashMap = new HashMap<String, List<Rate>>();
         //get all rates
         GetRatesTask asyncTask = new GetRatesTask();
         asyncTask.delegate = this;
@@ -132,7 +132,11 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
             if (currency.compareTo(Constants.EURO) == 0) {
                 sumTotal += amount;
             } else { // transform to EURO
+                clearVisitedRates();
                 double euroAmount = getEuroAmount(currency, amount);
+                if (euroAmount == 0) {
+                    euroAmount = buildRoadMapResult(currency, amount);
+                }
                 sumTotal += euroAmount;
             }
             t3v.setText(currency);
@@ -154,36 +158,72 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
     }
 
     public double getEuroAmount(String currency, double amount) {
-        for (int i = 0; i < directRatesToEuro.size(); i++) {
-            Rate rate = directRatesToEuro.get(i);
-            // know a transform it the same way on reverse
-            if (currency.compareTo(rate.getFrom()) == 0) {
+        UniqueQueue<Rate> queue = new UniqueQueue<Rate>();
+        List<Rate> rateList = hashMap.get(currency);
+        roadmap = new ArrayList<Rate>();
+        for (int i = 0; i < rateList.size(); i++) {
+            Rate rate = rateList.get(i);
+            if (rate.getTo().compareTo(Constants.EURO) == 0) {
                 return rate.getRate() * amount;
             }
+            rate.setVisited(true);
         }
-
-        for (int i = 0; i < rates.size(); i++) {
-
+        queue.addAll(rateList);
+        while(!queue.isEmpty()){
+            Rate r = queue.remove();
+            roadmap.add(r);
+            if (r.getTo().compareTo(Constants.EURO) == 0) {
+                return 0;
+            }
+            List<Rate> listRatesCurrency = hashMap.get(r.getTo());
+            for (Rate rate : listRatesCurrency) {
+                if (rate.getTo().compareTo(Constants.EURO) == 0) {
+                    roadmap.add(rate);
+                    return 0;
+                }
+                if (rate.getTo().compareTo(currency) != 0 && rate.getState() == false) {
+                    roadmap.add(rate);
+                    queue.add(rate);
+                    rate.setVisited(true);
+                }
+            }
         }
 
         return 0;
     }
 
+    public double buildRoadMapResult(String currency, double amount) {
+        //last element in the roadmap should be the transformation into EURO
+        Rate rate = roadmap.get(roadmap.size()-1);
+        while (rate.getFrom().compareTo(currency) != 0) {
+            
+        }
+
+        return 0;
+    }
+
+
+    public void clearVisitedRates() {
+        for (String key: hashMap.keySet()) {
+            List<Rate> rateList = hashMap.get(key);
+            for (int i = 0; i < rateList.size(); i++) {
+                Rate r = rateList.get(i);
+                r.setVisited(false);
+            }
+        }
+    }
+
     @Override
     public void processFinish(List<Rate> output) {
-        this.rates.addAll(output);
         for (int i = 0; i < output.size(); i++) {
             Rate rate = output.get(i);
-            if (rate.getTo().compareTo(Constants.EURO) == 0) {
-                this.directRatesToEuro.add(rate);
-            }
-            if (hashMap.containsKey(output.get(i).getFrom())) {
-                List<String> values = hashMap.get(output.get(i).getFrom());
-                values.add(output.get(i).getTo());
+            if (hashMap.containsKey(rate.getFrom())) {
+                List<Rate> values = hashMap.get(rate.getFrom());
+                values.add(rate);
             } else {
-                List<String> newValues = new ArrayList<String>();
-                newValues.add(output.get(i).getTo());
-                hashMap.put(output.get(i).getFrom(), newValues);
+                List<Rate> newValues = new ArrayList<Rate>();
+                newValues.add(rate);
+                hashMap.put(rate.getFrom(), newValues);
             }
         }
     }
